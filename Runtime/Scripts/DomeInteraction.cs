@@ -1,18 +1,18 @@
-using System.Reflection;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 namespace Netherlands3D.Masking
 {
     public class DomeInteraction : MonoBehaviour, 
-    IPointerDownHandler, IPointerClickHandler,
-    IPointerUpHandler, IPointerExitHandler, IPointerEnterHandler,
+    IPointerClickHandler,
+    IPointerUpHandler, IPointerEnterHandler,
     IBeginDragHandler, IDragHandler
-    {
+    {   
         [SerializeField] private Color highlightColor = Color.yellow;
         [SerializeField] private Color defaultColor = Color.white;
         private Material domeMaterial;
@@ -22,25 +22,78 @@ namespace Netherlands3D.Masking
         private bool hovering = false;
         private bool isDragging = false;
         private bool hoveringEdge = false;
-        private float scale = 1.0f;
+        [SerializeField] private float scale = 1.0f;
 
         private Vector3 startDragPointerPosition;
 
         [SerializeField] private UnityEvent selected;
         [SerializeField] private UnityEvent deselected;
 
+        private Coroutine animationCoroutine;
+
+        [Header("Scale in animation")]
+        [SerializeField] private AnimationCurve appearAnimationCurve;
+        [SerializeField] private float appearTime = 0.5f;
+        SphereCollider sphereCollider;
+
+        public bool AllowInteraction
+        {
+            get => sphereCollider.enabled;
+            set
+            {
+                sphereCollider.enabled = value;
+            }
+        }
+
+        private void Awake() {
+            sphereCollider = GetComponent<SphereCollider>();
+            sphereCollider.enabled = false;
+            mainCamera = Camera.main;
+        }
+
         private void Start()
         {
-            mainCamera = Camera.main;
             if(!mainCamera.TryGetComponent<PhysicsRaycaster>(out PhysicsRaycaster raycaster))
             {
-                Debug.LogWarning("A PhysicsRaycaster is required in order for the dome to be selectable", this.gameObject);
+                Debug.LogWarning("A PhysicsRaycaster is required  on main Camera in order for the dome to be selectable", this.gameObject);
             }
 
             domeMaterial = this.GetComponent<MeshRenderer>().material;
+        }
+        
 
-            //Start listening to generic clicks using input system to detect world clicks
 
+        public void MoveToScreenPoint(Vector2 screenPoint)
+        {
+            transform.position = PointerWorldPosition(screenPoint);
+            ScaleByCameraDistance();
+        }
+        
+        public void AnimateIn()
+        {
+            if(animationCoroutine != null)
+            {
+                StopCoroutine(animationCoroutine);
+            }
+            animationCoroutine = StartCoroutine(AppearAnimation());
+        }
+
+        
+        private IEnumerator AppearAnimation()
+        {
+            var targetScale = ScaleByCameraDistance();
+            var animationTime = 0.0f;
+            while(animationTime < appearTime){
+                animationTime += Time.deltaTime;
+                var curveTime = animationTime / appearTime;
+                var curveValue = appearAnimationCurve.Evaluate(curveTime);
+
+                this.transform.localScale = targetScale * curveValue;
+                yield return null;
+            }
+
+            this.transform.localScale = targetScale;
+            animationCoroutine = null;
         }
 
         private void Update()
@@ -75,7 +128,7 @@ namespace Netherlands3D.Masking
                 }
 
                 // Update the object's position based on the mouse position
-                transform.position = GetMouseWorldPosition(eventData);
+                transform.position = PointerWorldPosition(eventData.position);
             }
         }
 
@@ -85,22 +138,21 @@ namespace Netherlands3D.Masking
             isDragging = false;
         }
 
-        private Vector3 GetMouseWorldPosition(PointerEventData eventData)
+        private Vector3 PointerWorldPosition(Vector2 position)
         {
             // Calculate the mouse position in world space
-            Ray ray = mainCamera.ScreenPointToRay(eventData.position);
+            Ray ray = mainCamera.ScreenPointToRay(position);
             Plane plane = new Plane(Vector3.up, transform.parent.position);
-            float distance;
-            plane.Raycast(ray, out distance);
-            Vector3 mouseWorldPosition = ray.GetPoint(distance);
+            plane.Raycast(ray, out float distance);
+            Vector3 pointerWorldPosition = ray.GetPoint(distance);
 
-            return mouseWorldPosition;
+            return pointerWorldPosition;
         }
 
-        public void ScaleByDistance()
+        public Vector3 ScaleByCameraDistance()
         {
             var distanceScale = Mathf.Max(1.0f, scale * Vector3.Distance(mainCamera.transform.position, transform.position));
-            this.transform.localScale = Vector3.one * distanceScale;
+            return Vector3.one * distanceScale;
         }
 
         public void OnPointerClick(PointerEventData eventData)
@@ -111,22 +163,10 @@ namespace Netherlands3D.Masking
             domeMaterial.color = highlightColor;
         }
 
-        public void OnPointerDown(PointerEventData eventData)
-        {
-            Debug.Log("Mouse Down: " + eventData.pointerCurrentRaycast.gameObject.name);
-        }
-
         public void OnPointerEnter(PointerEventData eventData)
         {
             domeMaterial.color = highlightColor;
             hovering = true;
-        }
-
-        public void OnPointerExit(PointerEventData eventData)
-        {
-            Debug.Log("Mouse Exit");
-            domeMaterial.color = defaultColor;
-            hovering = false;
         }
     }
 }
