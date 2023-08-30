@@ -7,23 +7,23 @@ using UnityEngine.EventSystems;
 
 namespace Netherlands3D.Masking
 {
-    public class MaskingDome : MonoBehaviour
+    public class MaskingDomeSpawner : MonoBehaviour
     {
-        [Header("Action bindings")]
+        [Header("Placement actions")]
         [SerializeField] private InputActionReference clickPlacementAction;
         private InputSystemUIInputModule inputSystemUIInputModule;
         [SerializeField] private float maxCameraTravelToPlacement = 20.0f; 
-
+        [SerializeField] private DisappearDome disappearEffect;
         [SerializeField] private float margin;
 
-        [Header("Global shader names")]
+        [Header("Global masking shader names")]
         [SerializeField] private string sphericalMaskPositionName = "_SphericalMaskPosition";
         [SerializeField] private string sphericalMaskRadiusName = "_SphericalMaskRadius";
 
         private int positionPropertyID;
         private int radiusPropertyID;
 
-        [SerializeField] private DomeInteraction domeInteraction;
+        [SerializeField] private DomeVisualisation domeVisualisation;
 
         private Camera mainCamera;
         private Vector3 cameraLookatPosition = Vector3.zero;
@@ -58,8 +58,16 @@ namespace Netherlands3D.Masking
         /// </summary>
         private void StickToPointer()
         {
-            domeInteraction.AnimateIn();
+            domeVisualisation.AnimateIn();
             waitForInitialPlacement = true;
+        }
+
+        public void SpawnDisappearAnimation()
+        {
+            var newDisappearEffect = Instantiate(disappearEffect.gameObject,this.transform.parent);
+            var scale = domeVisualisation.transform.localScale;
+            Debug.Log($"{domeVisualisation.transform.localScale}");
+            newDisappearEffect.GetComponent<DisappearDome>().DisappearFrom(domeVisualisation.transform.position, domeVisualisation.transform.localScale);
         }
 
         private void StartTap(InputAction.CallbackContext context)
@@ -80,7 +88,7 @@ namespace Netherlands3D.Masking
 
         private Vector3 LookPosition()
         {
-            // Calculate the mouse position in world space
+            // Calculate the pointer position in world space
             Ray ray = mainCamera.ScreenPointToRay(Vector3.one*0.5f);
             Plane plane = new Plane(Vector3.up, transform.position);
             plane.Raycast(ray, out float distance);
@@ -92,12 +100,15 @@ namespace Netherlands3D.Masking
         private void PlaceDome()
         {
             waitForInitialPlacement = false;
-            domeInteraction.AllowInteraction = true;
+            domeVisualisation.AllowInteraction = true;
 
             if(!EventSystem.current.IsPointerOverGameObject()){
                 Vector2 pointerPosition = Pointer.current.position.ReadValue();
-                domeInteraction.MoveToScreenPoint(pointerPosition);
-                domeInteraction.AnimateIn();
+
+                SpawnDisappearAnimation();
+
+                domeVisualisation.MoveToScreenPoint(pointerPosition);
+                domeVisualisation.AnimateIn();
             }
         }      
 
@@ -105,13 +116,13 @@ namespace Netherlands3D.Masking
         {
             if(waitForInitialPlacement)
             {
-                domeInteraction.MoveToScreenPoint(Pointer.current.position.ReadValue());
+                domeVisualisation.MoveToScreenPoint(Pointer.current.position.ReadValue());
             }
 
-            if (domeInteraction.transform.hasChanged)
+            if (domeVisualisation.transform.hasChanged)
             {
                 ApplyGlobalShaderVariables();
-                domeInteraction.transform.hasChanged = false;
+                domeVisualisation.transform.hasChanged = false;
             }
         }
 
@@ -122,8 +133,8 @@ namespace Netherlands3D.Masking
 
         private void ApplyGlobalShaderVariables()
         {
-            Shader.SetGlobalVector(positionPropertyID,domeInteraction.transform.position);
-            Shader.SetGlobalFloat(radiusPropertyID,(domeInteraction.transform.localScale.x/2.0f) + margin);
+            Shader.SetGlobalVector(positionPropertyID,domeVisualisation.transform.position);
+            Shader.SetGlobalFloat(radiusPropertyID,(domeVisualisation.transform.localScale.x/2.0f) + margin);
         }
     }
 }

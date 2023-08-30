@@ -8,11 +8,12 @@ using UnityEngine.InputSystem;
 
 namespace Netherlands3D.Masking
 {
-    public class DomeInteraction : MonoBehaviour, 
+    public class DomeVisualisation : MonoBehaviour, 
     IPointerClickHandler,
-    IPointerUpHandler, IPointerEnterHandler,
-    IBeginDragHandler, IDragHandler
+    IPointerUpHandler, IPointerEnterHandler,IPointerExitHandler,
+    IBeginDragHandler, IDragHandler, IEndDragHandler
     {   
+        [SerializeField] private PointerEventData.InputButton dragButton = PointerEventData.InputButton.Left;
         [SerializeField] private Color highlightColor = Color.yellow;
         [SerializeField] private Color defaultColor = Color.white;
         private Material domeMaterial;
@@ -24,17 +25,21 @@ namespace Netherlands3D.Masking
         private bool hoveringEdge = false;
         [SerializeField] private float scale = 1.0f;
 
-        private Vector3 startDragPointerPosition;
-
-        [SerializeField] private UnityEvent selected;
-        [SerializeField] private UnityEvent deselected;
 
         private Coroutine animationCoroutine;
 
         [Header("Scale in animation")]
         [SerializeField] private AnimationCurve appearAnimationCurve;
+        [SerializeField] private AnimationCurve movedAnimationCurve;
         [SerializeField] private float appearTime = 0.5f;
         SphereCollider sphereCollider;
+
+        private Vector3 offset;
+
+        [Header("Events")]
+        public UnityEvent<bool> dragging = new();
+        public UnityEvent selected = new();
+        public UnityEvent deselected = new();
 
         public bool AllowInteraction
         {
@@ -60,8 +65,6 @@ namespace Netherlands3D.Masking
 
             domeMaterial = this.GetComponent<MeshRenderer>().material;
         }
-        
-
 
         public void MoveToScreenPoint(Vector2 screenPoint)
         {
@@ -75,20 +78,24 @@ namespace Netherlands3D.Masking
             {
                 StopCoroutine(animationCoroutine);
             }
-            animationCoroutine = StartCoroutine(AppearAnimation());
+            animationCoroutine = StartCoroutine(Animate());
         }
 
         
-        private IEnumerator AppearAnimation()
+        private IEnumerator Animate()
         {
-            var targetScale = ScaleByCameraDistance();
             var animationTime = 0.0f;
+
+            var targetScale = hovering ? this.transform.localScale : ScaleByCameraDistance();
+            var animationCurve =  hovering ? movedAnimationCurve : appearAnimationCurve;
+
             while(animationTime < appearTime){
                 animationTime += Time.deltaTime;
                 var curveTime = animationTime / appearTime;
-                var curveValue = appearAnimationCurve.Evaluate(curveTime);
+                var curveValue = animationCurve.Evaluate(curveTime);
 
                 this.transform.localScale = targetScale * curveValue;
+
                 yield return null;
             }
 
@@ -108,16 +115,22 @@ namespace Netherlands3D.Masking
 
         public void OnBeginDrag(PointerEventData eventData)
         {
+            if(eventData.button != dragButton) return;
+
+            DeterminePointerOffset(eventData.position);
+
             // Set the object as being dragged
             isDragging = true;
-            startDragPointerPosition = eventData.position;
-
             //Highlight 
             domeMaterial.color = highlightColor;
+
+            dragging.Invoke(true);
         }
 
         public void OnDrag(PointerEventData eventData)
         {
+            if(eventData.button != dragButton) return;
+
             if (isDragging)
             {
                 // If we are dragging the edge of the dome; scale instead of drag.
@@ -127,13 +140,25 @@ namespace Netherlands3D.Masking
                     return;
                 }
 
-                // Update the object's position based on the mouse position
-                transform.position = PointerWorldPosition(eventData.position);
+                // Update the object's position based on the pointer position
+                transform.position = PointerWorldPosition(eventData.position) - offset;
             }
+        }
+
+        public void OnEndDrag(PointerEventData eventData)
+        {
+            isDragging = false;
+
+            dragging.Invoke(false);
         }
 
         public void OnPointerUp(PointerEventData eventData)
         {
+            if(eventData.button != dragButton) return;
+
+            // Update the object's position based on the pointer position
+            transform.position = PointerWorldPosition(eventData.position) - offset;
+
             // Reset the dragging flag
             isDragging = false;
         }
@@ -157,16 +182,29 @@ namespace Netherlands3D.Masking
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            // Output to console the clicked GameObject's name and the following message. You can replace this with your own actions for when clicking the GameObject.
-            Debug.Log(name + " Game Object Clicked!");
+            transform.position = PointerWorldPosition(eventData.position) - offset;
+            ScaleByCameraDistance();
+
+            AnimateIn();
 
             domeMaterial.color = highlightColor;
+        }
+
+        private void DeterminePointerOffset(Vector3 pointerPosition)
+        {
+            offset = PointerWorldPosition(pointerPosition) - this.transform.position;
         }
 
         public void OnPointerEnter(PointerEventData eventData)
         {
             domeMaterial.color = highlightColor;
             hovering = true;
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            domeMaterial.color = defaultColor;
+            hovering = false;
         }
     }
 }
